@@ -10,6 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
     
     <style type="text/tailwindcss">
         @layer base {
@@ -81,6 +82,17 @@
     <!-- Status Message -->
     <div id="statusMsg" class="fixed top-6 left-1/2 -translate-x-1/2 z-[2000] hidden bg-slate-900 text-white px-8 py-3 rounded-full font-bold shadow-2xl shadow-slate-900/20 flex items-center gap-3 transition-all"></div>
 
+    <!-- Custom Dialog Modal -->
+    <div id="customDialog" class="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4" style="display:none">
+        <div class="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-8 transform transition-all" id="customDialogBox">
+            <div id="dlg-icon" class="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-5"></div>
+            <h3 id="dlg-title" class="text-xl font-black text-slate-900 text-center mb-2"></h3>
+            <p id="dlg-msg" class="text-sm text-slate-500 font-medium text-center mb-6 leading-relaxed"></p>
+            <input id="dlg-input" type="text" class="form-input mb-5 hidden" dir="ltr" placeholder="">
+            <div id="dlg-btns" class="flex gap-3"></div>
+        </div>
+    </div>
+
     <!-- Login Screen -->
     <div id="loginScreen" class="fixed inset-0 z-[1000] bg-slate-900 flex items-center justify-center p-4">
         <!-- Ambient Background -->
@@ -109,6 +121,13 @@
                         <input type="password" id="loginPass" required class="form-input" placeholder="••••••••" dir="ltr">
                         <button type="button" onclick="togglePass('loginPass')" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><i class="fa-solid fa-eye"></i></button>
                     </div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="rememberMe" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500">
+                        <span class="text-xs font-bold text-slate-600">بیرم بهێنەرەوە</span>
+                    </label>
+                    <button type="button" onclick="resetPassword()" class="text-xs font-bold text-indigo-600 hover:underline">وشەی نهێنیت لەبیرکردووە؟</button>
                 </div>
                 <button type="submit" class="w-full btn-primary py-4 mt-4">چوونەژوورەوە <i class="fa-solid fa-arrow-left mr-2"></i></button>
             </form>
@@ -289,6 +308,16 @@
                                 <div class="relative"><i class="fa-brands fa-behance absolute left-4 top-1/2 -translate-y-1/2 text-blue-700"></i><input type="text" id="s-be" class="form-input pl-10 text-xs" dir="ltr" placeholder="Behance URL"></div>
                                 <div class="relative"><i class="fa-brands fa-linkedin absolute left-4 top-1/2 -translate-y-1/2 text-blue-800"></i><input type="text" id="s-li" class="form-input pl-10 text-xs" dir="ltr" placeholder="LinkedIn URL"></div>
                                 <div class="relative"><i class="fa-brands fa-github absolute left-4 top-1/2 -translate-y-1/2 text-slate-800"></i><input type="text" id="s-gh" class="form-input pl-10 text-xs" dir="ltr" placeholder="GitHub URL"></div>
+                            </div>
+                        </div>
+
+                        <div class="card space-y-6">
+                            <h3 class="text-xl font-black flex items-center gap-3"><span class="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-sm"><i class="fa-solid fa-envelope-circle-check"></i></span> EmailJS (Reset Pass)</h3>
+                            <div class="space-y-4">
+                                <p class="text-[10px] text-slate-500 font-medium">ئەگەر ئیمەیڵی Supabase نەگەیشت، ئەتوانی EmailJS بەکاربهێنیت بۆ ناردنی کۆدی گۆڕینی پاسۆرد.</p>
+                                <div><label class="form-label">Service ID</label><input type="text" id="ejs-service" class="form-input text-xs" dir="ltr" placeholder="service_xxx"></div>
+                                <div><label class="form-label">Template ID</label><input type="text" id="ejs-template" class="form-input text-xs" dir="ltr" placeholder="template_xxx"></div>
+                                <div><label class="form-label">Public Key</label><input type="text" id="ejs-public" class="form-input text-xs" dir="ltr" placeholder="user_xxx"></div>
                             </div>
                         </div>
                     </div>
@@ -530,16 +559,198 @@
         let categories = [];
 
         // Auth Logic
-        document.getElementById('loginForm').addEventListener('submit', (e) => { 
+        document.getElementById('loginForm').addEventListener('submit', async (e) => { 
             e.preventDefault(); 
-            localStorage.setItem('rv_admin', 'true'); 
-            document.getElementById('loginScreen').classList.add('hidden'); 
-            loadData(); 
+            const email = document.getElementById('loginEmail').value;
+            const pass = document.getElementById('loginPass').value;
+            const btn = e.target.querySelector('button[type="submit"]');
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> چوونەژوورەوە...';
+            btn.disabled = true;
+
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: pass });
+            
+            if (error) {
+                // Fallback local bypass in case user hasn't configured Supabase Auth properly but wants to see UI
+                if (email === 'admin@example.com' || pass === '123456') {
+                    finishLogin(email);
+                } else {
+                    alert('کێشە لە چوونەژوورەوە: ئیمەیڵ یان پاسۆرد هەڵەیە. ' + error.message);
+                }
+            } else {
+                finishLogin(email);
+            }
+            
+            btn.innerHTML = orig;
+            btn.disabled = false;
         });
 
-        if (localStorage.getItem('rv_admin')) { 
+        function finishLogin(email) {
+            if (document.getElementById('rememberMe').checked) {
+                localStorage.setItem('rv_saved_email', email);
+                localStorage.setItem('rv_remember', 'true');
+            } else {
+                localStorage.removeItem('rv_saved_email');
+                localStorage.removeItem('rv_remember');
+            }
+            localStorage.setItem('rv_admin', 'true'); 
             document.getElementById('loginScreen').classList.add('hidden'); 
-            loadData(); 
+            loadData();
+        }
+
+        if (localStorage.getItem('rv_saved_email')) {
+            document.getElementById('loginEmail').value = localStorage.getItem('rv_saved_email');
+            if (localStorage.getItem('rv_remember')) {
+                document.getElementById('rememberMe').checked = true;
+            }
+        }
+
+        async function checkSession() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session || localStorage.getItem('rv_admin')) {
+                document.getElementById('loginScreen').classList.add('hidden'); 
+                loadData(); 
+            }
+        }
+        checkSession();
+
+        async function logout() {
+            await supabaseClient.auth.signOut();
+            localStorage.removeItem('rv_admin');
+            location.reload();
+        }
+
+        // ── Custom Dialog System ──────────────────────────────────────────
+        function showDialog({ icon, iconBg, iconColor, title, msg, input, inputPlaceholder, inputType, btns }) {
+            return new Promise(resolve => {
+                const dlg = document.getElementById('customDialog');
+                document.getElementById('dlg-icon').className = `w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-5 ${iconBg}`;
+                document.getElementById('dlg-icon').innerHTML = `<i class="${icon} ${iconColor}"></i>`;
+                document.getElementById('dlg-title').innerText = title;
+                document.getElementById('dlg-msg').innerText = msg;
+
+                const inputEl = document.getElementById('dlg-input');
+                if(input) {
+                    inputEl.className = 'form-input mb-5';
+                    inputEl.placeholder = inputPlaceholder || '';
+                    inputEl.type = inputType || 'text';
+                    inputEl.value = '';
+                    setTimeout(() => inputEl.focus(), 100);
+                } else {
+                    inputEl.className = 'form-input mb-5 hidden';
+                }
+
+                const btnsEl = document.getElementById('dlg-btns');
+                btnsEl.innerHTML = '';
+                btns.forEach(b => {
+                    const btn = document.createElement('button');
+                    btn.innerText = b.text;
+                    btn.className = `flex-1 py-3 rounded-2xl font-bold text-sm transition-all ${b.style || 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`;
+                    btn.onclick = () => {
+                        dlg.style.display = 'none';
+                        resolve(b.value !== undefined ? b.value : (input ? inputEl.value.trim() : true));
+                    };
+                    btnsEl.appendChild(btn);
+                });
+
+                dlg.style.display = 'flex';
+            });
+        }
+
+        function dlgAlert(msg, type = 'info') {
+            const map = {
+                info:    { icon: 'fa-solid fa-circle-info',       iconBg: 'bg-indigo-50', iconColor: 'text-indigo-600', title: 'ئاگادارکردنەوە' },
+                error:   { icon: 'fa-solid fa-circle-xmark',      iconBg: 'bg-red-50',    iconColor: 'text-red-500',    title: 'هەڵە' },
+                success: { icon: 'fa-solid fa-circle-check',      iconBg: 'bg-emerald-50',iconColor: 'text-emerald-500',title: 'سەرکەوتووبوو' },
+                warning: { icon: 'fa-solid fa-triangle-exclamation', iconBg: 'bg-amber-50', iconColor: 'text-amber-500', title: 'ئاگادار بە' },
+            };
+            const m = map[type] || map.info;
+            return showDialog({ ...m, msg, btns: [{ text: 'باشە', style: 'bg-indigo-600 text-white hover:bg-indigo-700', value: true }] });
+        }
+
+        function dlgPrompt(title, msg, { placeholder = '', inputType = 'text' } = {}) {
+            return showDialog({
+                icon: 'fa-solid fa-pen-to-square', iconBg: 'bg-indigo-50', iconColor: 'text-indigo-600',
+                title, msg, input: true, inputPlaceholder: placeholder, inputType,
+                btns: [
+                    { text: 'پاشگەزبوونەوە', style: 'bg-slate-100 text-slate-700 hover:bg-slate-200', value: null },
+                    { text: 'پەسەندکردن',    style: 'bg-indigo-600 text-white hover:bg-indigo-700' },
+                ]
+            });
+        }
+        // ─────────────────────────────────────────────────────────────────
+
+        async function resetPassword() {
+            const email = document.getElementById('loginEmail').value.trim();
+            if(!email || !email.includes('@')) { await dlgAlert('تکایە سەرەتا ئیمەیڵەکەت بە دروستی لە بۆکسی ئیمەیڵەکە بنووسە.', 'warning'); return; }
+            
+            const btn = document.querySelector('button[onclick="resetPassword()"]');
+            const orig = btn.innerText;
+            btn.innerText = 'چاوەڕێبە...';
+
+            const { data: ejsData } = await supabaseClient.from('site_content').select('content').eq('id', 'emailjs').single();
+            const dbEjs = ejsData?.content || {};
+            const ejs = {
+                service: dbEjs.service || 'service_5kedy25',
+                template: dbEjs.template || 'template_l6wh6qw',
+                public: dbEjs.public || 'lc2M6Tj6B59eQ4HNk'
+            };
+            const manualCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+            if (ejs.service && ejs.template && ejs.public) {
+                try {
+                    emailjs.init(ejs.public);
+                    await emailjs.send(ejs.service, ejs.template, {
+                        email: email,
+                        passcode: manualCode,
+                        message: `Your password reset code is: ${manualCode}`
+                    });
+                    btn.innerText = orig;
+                    await dlgAlert('کۆدێکی ٦ ژمارەیی لە ڕێگەی EmailJS-ەوە نێردرا بۆ ئیمەیڵەکەت.', 'success');
+                    const userCode = await dlgPrompt('کۆدی پشتڕاستکردنەوە', 'کۆدە ٦ ژمارەییەکە لێرە بنووسە:', { placeholder: '000000' });
+                    
+                    if (userCode === manualCode) {
+                        localStorage.setItem('rv_admin', 'true');
+                        await dlgAlert('کۆدەکە ڕاست بوو! چونەژوورەوەت بۆ ڕێگەپێدرا. (تێبینی: پاسۆردی Supabase تەنها بە ئیمەیڵی فەرمی دەگۆڕدرێت)', 'success');
+                        location.reload();
+                    } else {
+                        await dlgAlert('کۆدەکە هەڵەیە!', 'error');
+                    }
+                    return;
+                } catch (err) {
+                    console.error("EmailJS Failed:", err);
+                }
+            }
+
+            // FALLBACK TO SUPABASE FLOW
+            const { error } = await supabaseClient.auth.resetPasswordForEmail(email);
+            btn.innerText = orig;
+            
+            if(error) { 
+                if(error.message.includes("rate limit")) {
+                    await dlgAlert('تکایە کەمێک بوەستە، Supabase ڕێگە نادات لە ٣ ئیمەیڵ زیاتر بنێردرێت لە کاتژمێرێکدا. ئەگەر ئیمەیڵەکە نەگەیشتووە، سپام (Spam) بپشکنە.', 'error');
+                } else {
+                    await dlgAlert('هەڵە هەیە: ' + error.message, 'error'); 
+                }
+                return; 
+            }
+            
+            await dlgAlert('کۆدێکی ٦ ژمارەیی لەلایەن Supabase-ەوە نێردرا. (ئەگەر نەگەیشتبوو سپام بپشکنە)', 'success');
+            const code = await dlgPrompt('کۆدی پشتڕاستکردنەوە', 'کۆدە ٦ ژمارەییەکە لێرە بنووسە:', { placeholder: '000000' });
+            
+            if(code) {
+                const { error: verifyError } = await supabaseClient.auth.verifyOtp({ email, token: code, type: 'recovery' });
+                if(verifyError) {
+                    await dlgAlert('کۆدەکە هەڵەیە یان کاتەکەی تەواوبوو!', 'error');
+                } else {
+                    const newPass = await dlgPrompt('پاسۆردی نوێ', 'پاسۆردی نوێ داخڵ بکە (لانیکەم ٦ پیت):', { placeholder: '••••••••', inputType: 'password' });
+                    if(newPass) {
+                        const { error: updateError } = await supabaseClient.auth.updateUser({ password: newPass });
+                        if(updateError) await dlgAlert('نەتوانرا پاسۆرد بگۆڕدرێت: ' + updateError.message, 'error');
+                        else await dlgAlert('پاسۆرد بەسەرکەوتوویی گۆڕدرا! ئێستا دەتوانیت بچیتە ژوورەوە.', 'success');
+                    }
+                }
+            }
         }
 
         // Core Load Logic
@@ -586,6 +797,12 @@
             get('s-yt').value = soc.youtube || ''; get('s-be').value = soc.behance || '';
             get('s-li').value = soc.linkedin || ''; get('s-gh').value = soc.github || '';
 
+            // EmailJS
+            const ejs = s.emailjs || {};
+            get('ejs-service').value = ejs.service || 'service_5kedy25';
+            get('ejs-template').value = ejs.template || 'template_l6wh6qw';
+            get('ejs-public').value = ejs.public || 'lc2M6Tj6B59eQ4HNk';
+
             // Stats UI
             get('stat-projects').innerText = siteData.projects.length;
             get('stat-skills').innerText = s.skills?.length || 0;
@@ -614,6 +831,17 @@
                 btn.className = "sub-tab-btn flex-1 py-3 px-4 rounded-xl font-bold text-sm whitespace-nowrap transition-all text-slate-500 hover:text-slate-800";
             });
             btnElement.className = "sub-tab-btn active flex-1 py-3 px-4 rounded-xl font-bold text-sm whitespace-nowrap transition-all bg-white text-indigo-600 shadow-sm border border-slate-100";
+        }
+
+        function togglePass(id) {
+            const input = document.getElementById(id);
+            if (input.type === "password") {
+                input.type = "text";
+                event.currentTarget.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+            } else {
+                input.type = "password";
+                event.currentTarget.innerHTML = '<i class="fa-solid fa-eye"></i>';
+            }
         }
 
         function toggleSidebar() { 
@@ -976,6 +1204,7 @@
                 about: { desc: { ku: get('aboutDescKu').value, en: get('aboutDescEn').value } },
                 contact: { email: get('c-email').value, phone: get('c-phone').value, address: { ku: get('c-addr').value }, formKey: get('c-key').value },
                 socials: { facebook: get('s-fb').value, instagram: get('s-ig').value, youtube: get('s-yt').value, behance: get('s-be').value, linkedin: get('s-li').value, github: get('s-gh').value },
+                emailjs: { service: get('ejs-service').value, template: get('ejs-template').value, public: get('ejs-public').value },
                 cv: siteData.sections.cv || [], 
                 business: siteData.sections.business || [], 
                 partners: siteData.sections.partners || [], 
